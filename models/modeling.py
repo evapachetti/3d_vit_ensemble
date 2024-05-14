@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun 16 11:46:42 2022
+
+@author: Germanese
+"""
+
 # coding=utf-8
 from __future__ import absolute_import
 from __future__ import division
@@ -13,7 +20,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
+from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm, BCEWithLogitsLoss
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
 
@@ -124,26 +131,30 @@ class Mlp(nn.Module):
 class Embeddings(nn.Module):
     """Construct the embeddings from patch, position embeddings.
     """
-    def __init__(self, config, img_size, in_channels=3):
+    def __init__(self, config, img_size, in_channels=1):
         super(Embeddings, self).__init__()
         self.hybrid = None
-        img_size = _pair(img_size)
-
+        #img_size = _pair(img_size)
+        self.z_size = 5 # numero di fette nel volume
+        img_size = (img_size,img_size,self.z_size)
+        
         if config.patches.get("grid") is not None:
             grid_size = config.patches["grid"]
             patch_size = (img_size[0] // 16 // grid_size[0], img_size[1] // 16 // grid_size[1])
-            n_patches = (img_size[0] // 16) * (img_size[1] // 16)
+            #n_patches = (img_size[0] // 16) * (img_size[1] // 16)
+            n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (img_size[2] // patch_size[2])
+
             self.hybrid = True
         else:
             patch_size = _pair(config.patches["size"])
-            n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1])
+            n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (img_size[2] // patch_size[2])
             self.hybrid = False
 
         if self.hybrid:
             self.hybrid_model = ResNetV2(block_units=config.resnet.num_layers,
                                          width_factor=config.resnet.width_factor)
             in_channels = self.hybrid_model.width * 16
-        self.patch_embeddings = Conv2d(in_channels=in_channels,
+        self.patch_embeddings = Conv3d(in_channels=in_channels,
                                        out_channels=config.hidden_size,
                                        kernel_size=patch_size,
                                        stride=patch_size)
@@ -192,15 +203,15 @@ class Block(nn.Module):
     def load_from(self, weights, n_block):
         ROOT = f"Transformer/encoderblock_{n_block}"
         with torch.no_grad():
-            query_weight = np2th(weights[pjoin(ROOT, ATTENTION_Q, "kernel")]).view(self.hidden_size, self.hidden_size).t()
-            key_weight = np2th(weights[pjoin(ROOT, ATTENTION_K, "kernel")]).view(self.hidden_size, self.hidden_size).t()
-            value_weight = np2th(weights[pjoin(ROOT, ATTENTION_V, "kernel")]).view(self.hidden_size, self.hidden_size).t()
-            out_weight = np2th(weights[pjoin(ROOT, ATTENTION_OUT, "kernel")]).view(self.hidden_size, self.hidden_size).t()
+            query_weight = np2th(weights[ROOT + "/" + ATTENTION_Q + "/" + "kernel"]).view(self.hidden_size, self.hidden_size).t()
+            key_weight = np2th(weights[ROOT + "/" + ATTENTION_K + "/" + "kernel"]).view(self.hidden_size, self.hidden_size).t()
+            value_weight = np2th(weights[ROOT + "/" + ATTENTION_V + "/" + "kernel"]).view(self.hidden_size, self.hidden_size).t()
+            out_weight = np2th(weights[ROOT + "/" + ATTENTION_OUT + "/" + "kernel"]).view(self.hidden_size, self.hidden_size).t()
 
-            query_bias = np2th(weights[pjoin(ROOT, ATTENTION_Q, "bias")]).view(-1)
-            key_bias = np2th(weights[pjoin(ROOT, ATTENTION_K, "bias")]).view(-1)
-            value_bias = np2th(weights[pjoin(ROOT, ATTENTION_V, "bias")]).view(-1)
-            out_bias = np2th(weights[pjoin(ROOT, ATTENTION_OUT, "bias")]).view(-1)
+            query_bias = np2th(weights[ROOT + "/" + ATTENTION_Q + "/" + "bias"]).view(-1)
+            key_bias = np2th(weights[ROOT + "/" + ATTENTION_K + "/" + "bias"]).view(-1)
+            value_bias = np2th(weights[ROOT + "/" + ATTENTION_V + "/" + "bias"]).view(-1)
+            out_bias = np2th(weights[ROOT + "/" + ATTENTION_OUT + "/" + "bias"]).view(-1)
 
             self.attn.query.weight.copy_(query_weight)
             self.attn.key.weight.copy_(key_weight)
@@ -211,20 +222,20 @@ class Block(nn.Module):
             self.attn.value.bias.copy_(value_bias)
             self.attn.out.bias.copy_(out_bias)
 
-            mlp_weight_0 = np2th(weights[pjoin(ROOT, FC_0, "kernel")]).t()
-            mlp_weight_1 = np2th(weights[pjoin(ROOT, FC_1, "kernel")]).t()
-            mlp_bias_0 = np2th(weights[pjoin(ROOT, FC_0, "bias")]).t()
-            mlp_bias_1 = np2th(weights[pjoin(ROOT, FC_1, "bias")]).t()
+            mlp_weight_0 = np2th(weights[ROOT + "/" + FC_0 + "/" + "kernel"]).t()
+            mlp_weight_1 = np2th(weights[ROOT + "/" + FC_1 + "/" + "kernel"]).t()
+            mlp_bias_0 = np2th(weights[ROOT + "/" + FC_0 + "/" + "bias"]).t()
+            mlp_bias_1 = np2th(weights[ROOT + "/" + FC_1 + "/" + "bias"]).t()
 
             self.ffn.fc1.weight.copy_(mlp_weight_0)
             self.ffn.fc2.weight.copy_(mlp_weight_1)
             self.ffn.fc1.bias.copy_(mlp_bias_0)
             self.ffn.fc2.bias.copy_(mlp_bias_1)
 
-            self.attention_norm.weight.copy_(np2th(weights[pjoin(ROOT, ATTENTION_NORM, "scale")]))
-            self.attention_norm.bias.copy_(np2th(weights[pjoin(ROOT, ATTENTION_NORM, "bias")]))
-            self.ffn_norm.weight.copy_(np2th(weights[pjoin(ROOT, MLP_NORM, "scale")]))
-            self.ffn_norm.bias.copy_(np2th(weights[pjoin(ROOT, MLP_NORM, "bias")]))
+            self.attention_norm.weight.copy_(np2th(weights[ROOT + "/" + ATTENTION_NORM + "/" + "scale"]))
+            self.attention_norm.bias.copy_(np2th(weights[ROOT + "/" + ATTENTION_NORM + "/" + "bias"]))
+            self.ffn_norm.weight.copy_(np2th(weights[ROOT + "/" + MLP_NORM + "/" + "scale"]))
+            self.ffn_norm.bias.copy_(np2th(weights[ROOT + "/" + MLP_NORM + "/" + "bias"]))
 
 
 class Encoder(nn.Module):
@@ -260,7 +271,7 @@ class Transformer(nn.Module):
 
 
 class VisionTransformer(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=False):
+    def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=True):
         super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
         self.zero_head = zero_head
@@ -269,16 +280,17 @@ class VisionTransformer(nn.Module):
         self.transformer = Transformer(config, img_size, vis)
         self.head = Linear(config.hidden_size, num_classes)
 
-    def forward(self, x, labels=None):
+    def forward(self, x, labels=None, weights=None):
         x, attn_weights = self.transformer(x)
         logits = self.head(x[:, 0])
-
+       
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
+            loss_fct = BCEWithLogitsLoss(pos_weight = weights)
+            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1).unsqueeze(dim=1))
             return loss
         else:
-            return logits, attn_weights
+            return logits, attn_weights, x #x è il vettore di features encoded prima dell'ultimo strato FC
+           
 
     def load_from(self, weights):
         with torch.no_grad():
@@ -343,5 +355,6 @@ CONFIGS = {
     'ViT-L_32': configs.get_l32_config(),
     'ViT-H_14': configs.get_h14_config(),
     'R50-ViT-B_16': configs.get_r50_b16_config(),
+    'EvaViT': configs.get_eva_config(),
     'testing': configs.get_testing(),
 }

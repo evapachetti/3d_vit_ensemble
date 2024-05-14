@@ -12,8 +12,66 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+#TRANSFORMER CONFIGURATIONS
+configurations = {}
+mlp_dim = [2048,3072]
+n_layers = [4,6,8]
+hs_nh = [(64,4), (32,8), (16,16)]
+k=1
+
+for dim in mlp_dim:
+    for n in n_layers:
+        for hs,nh in hs_nh:
+            configurations['Configuration '+str(k)] = [16,dim,n,hs,nh]
+            k += 1
+            
+            
+mlp_dim = [4096]
+n_layers = [4,6,8]
+hs_nh = [(256,4), (128,8), (64,16)]
+
+k = 19
+for dim in mlp_dim:
+    for n in n_layers:
+        for hs,nh in hs_nh:
+            configurations['Configuration '+str(k)] = [32,dim,n,hs,nh]
+            k += 1
+                     
+
+mlp_dim = [2204]
+n_layers = [4,6]
+hs_nh = [(16,4),(8,8)]
+
+k = 28
+for dim in mlp_dim:
+    for n in n_layers:
+        for hs,nh in hs_nh:
+            configurations['Configuration '+str(k)] = [8,dim,n,hs,nh]
+            k += 1
+            
+
+            
+conf = 5 # configuration to be choose
+ps,dim,n,hs,nh = configurations['Configuration '+str(conf)][0], configurations['Configuration '+str(conf)][1], configurations['Configuration '+str(conf)][2],  configurations['Configuration '+str(conf)][3],  configurations['Configuration '+str(conf)][4]
+
+
 import ml_collections
 
+def get_eva_config():
+    """Returns the EvaViT configuration."""
+    config = ml_collections.ConfigDict()
+    config.patches = ml_collections.ConfigDict({'size': (ps, ps, 5)})
+    config.hidden_size = hs
+    config.transformer = ml_collections.ConfigDict()
+    config.transformer.mlp_dim = dim
+    config.transformer.num_heads = nh
+    config.transformer.num_layers = n
+    config.transformer.attention_dropout_rate = 0.0
+    config.transformer.dropout_rate = 0.1
+    config.classifier = 'token'
+    config.representation_size = None
+    return config
+    
 
 def get_testing():
     """Returns a minimal configuration for testing."""
