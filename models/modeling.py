@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun 16 11:46:42 2022
-
-@author: Germanese
+@author: Eva Pachetti
 """
 
 # coding=utf-8
@@ -16,16 +14,15 @@ import math
 
 from os.path import join as pjoin
 
-import torch
-import torch.nn as nn
-import numpy as np
+import torch # type: ignore
+import torch.nn as nn # type: ignore
+import numpy as np # type: ignore
 
-from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm, BCEWithLogitsLoss
-from torch.nn.modules.utils import _pair
-from scipy import ndimage
+from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm, BCEWithLogitsLoss # type: ignore
+from torch.nn.modules.utils import _pair # type: ignore
+from scipy import ndimage # type: ignore
 
 import models.configs as configs
-
 from .modeling_resnet import ResNetV2
 
 
@@ -346,7 +343,7 @@ class VisionTransformer(nn.Module):
                 for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
                     for uname, unit in block.named_children():
                         unit.load_from(weights, n_block=bname, n_unit=uname)
-                        
+
 
 class TransformerEnsemble(nn.Module):
     def __init__(self, *transformers, in_features=3, n_classes=1):

@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jun 15 13:24:12 2022
-
-@author: Germanese
+@author: Eva Pachetti
 """
 
 import random
-import numpy as np
-import torch
-import ml_collections
-import pandas as pd
+import numpy as np # type: ignore
+import torch # type: ignore
+import ml_collections # type: ignore
+import pandas as pd # type: ignore
 
 def set_seed(seed = 42):
     random.seed(seed)

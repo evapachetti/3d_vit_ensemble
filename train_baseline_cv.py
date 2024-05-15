@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-@author: Eva Pachetti
+@author: Eva Pachetti (based on https://github.com/jeonsworld/ViT-pytorch)
 """
 
-
-# coding=utf-8
 from __future__ import absolute_import, division, print_function
 
 import logging
 import argparse
 import os
-import numpy as np
+import numpy as np # type: ignore
 from datetime import timedelta
-import torch
-from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+import torch # type: ignore
+from tqdm import tqdm # type: ignore
+from torch.utils.tensorboard import SummaryWriter # type: ignore
 from models.modeling import VisionTransformer, CONFIGS
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils_cv import get_loader
-from sklearn.metrics import balanced_accuracy_score, recall_score, roc_auc_score,fbeta_score, average_precision_score,brier_score_loss
-from sklearn.utils import class_weight
+from sklearn.metrics import balanced_accuracy_score, recall_score, roc_auc_score,fbeta_score, average_precision_score,brier_score_loss # type: ignore
+from sklearn.utils import class_weight # type: ignore
 import random
+
 
 num_cv = 5
 
@@ -28,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 cv_metrics = {'CV 1':{}, 'CV 2':{}, 'CV 3':{}, 'CV 4':{}, 'CV 5':{}} 
 metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score','CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
+
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if args.n_gpu > 0:
+        torch.cuda.manual_seed_all(args.seed)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -176,9 +182,7 @@ def train(args, model, cv):
 
 
     while True: 
-        
         # Prepare dataset
-         
         train_loader, test_loader = get_loader(args, cv)
 
         model.train()
@@ -193,11 +197,8 @@ def train(args, model, cv):
             y = y.float()
             
             weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y.numpy())
-            
-            if len(weights) > 1:
-                weights = torch.tensor(weights[1]) 
-            else: weights = torch.tensor(weights[0])
-            
+            weights = torch.tensor(weights[1] if len(weights) > 1 else weights[0])
+
             loss = model(x, y, weights)
            
             if args.gradient_accumulation_steps > 1:
@@ -223,20 +224,18 @@ def train(args, model, cv):
                     
                     logger.info("ROC AUC: \t%f" % roc_auc)
                     
-                    # Custom decision process to ensure both spec and sens > 0.5 if this happens, otherwise I look at AUROC alone
-                    if specificity > 0.6 and sensitivity > 0.6:
-                        if best_choice == False:
-                            best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl,pl,cp= save_best_metrics(args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities)
-
-                            best_choice = True
-                        else: 
-                            if roc_auc > best_auc:
-                                best_spec, best_sens, best_acc, best_auc,best_f2, best_ap, tl,pl,cp = save_best_metrics(args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities)
-                    else:
-                        if best_choice == False: 
-                            if roc_auc > best_auc:
-                                best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl,pl, cp= save_best_metrics(args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities)
-
+                # Custom decision process to ensure both spec and sens > 0.6; otherwise, look at AUROC alone
+                if specificity > 0.6 and sensitivity > 0.6:
+                    if not best_choice or roc_auc > best_auc:
+                        best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
+                            args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
+                        )
+                        best_choice = True
+                else:
+                    if not best_choice and roc_auc > best_auc:
+                        best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
+                            args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
+        )
                     model.train()                    
                 
                 if global_step % t_total == 0:
@@ -268,11 +267,8 @@ def main(cv):
                                                  "ViT-L_32", "ViT-H_14", "R50-ViT-B_16", "EvaViT"],
                         default="ViT-B_16",
                         help="Which variant to use.")
-    parser.add_argument("--pretrained_dir", type=str,
-                        help="Where to search for pretrained ViT models.")
     parser.add_argument("--output_dir", type=str,
                         help="The output directory where checkpoints will be written.")
-
     parser.add_argument("--img_size", default=128, type=int,
                         help="Resolution size")
     parser.add_argument("--train_batch_size", default=4, type=int,
@@ -282,7 +278,6 @@ def main(cv):
     parser.add_argument("--eval_every", default=24, type=int,
                         help="Run prediction on validation set every so many steps."
                              "Will always run one evaluation at the end of training.")
-
     parser.add_argument("--learning_rate", default=1e-4, type=float,
                         help="The initial learning rate for SGD.")
     parser.add_argument("--weight_decay", default=1e-2, type=float,
@@ -293,9 +288,6 @@ def main(cv):
                         help="How to decay the learning rate.")
     parser.add_argument("--warmup_steps", default=1000, type=int,
                         help="Step of training to perform learning rate warmup for.")
-    parser.add_argument("--max_grad_norm", default=1.0, type=float,
-                        help="Max gradient norm.")
-
     parser.add_argument("--local_rank", type=int, default=-1,
                         help="local_rank for distributed training on gpus")
     parser.add_argument('--seed', type=int, default=42,
@@ -304,13 +296,6 @@ def main(cv):
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument('--fp16', action='store_true',
                         help="Whether to use 16-bit float precision instead of 32-bit")
-    parser.add_argument('--fp16_opt_level', type=str, default='O2',
-                        help="For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
-                             "See details at https://nvidia.github.io/apex/amp.html")
-    parser.add_argument('--loss_scale', type=float, default=0,
-                        help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
-                             "0 (default value): dynamic loss scaling.\n"
-                             "Positive power of 2: static loss scaling value.\n")
     args = parser.parse_args()
     
         
@@ -350,29 +335,6 @@ def main(cv):
 if __name__ == "__main__":
     
     for cv in range(num_cv):
-    
         best_spec, best_sens, best_acc, best_auc, best_ap, best_f2, tl, pl,cp = main(cv)
-        
-        csp,cse = calculate_confidence_metrics(tl, pl, cp) 
-        bs = brier_score_loss(tl, cp)
-        bsnc = brier_score_one_class(tl, cp, cl = 0)
-        bspc = brier_score_one_class(tl, cp, cl = 1)
-        
-        cv_metrics['CV '+str(cv+1)]['Specificity'] = best_spec
-        cv_metrics['CV '+str(cv+1)]['Sensitivity'] = best_sens
-        cv_metrics['CV '+str(cv+1)]['Balanced Accuracy'] = best_acc
-        cv_metrics['CV '+str(cv+1)]['AUROC'] = best_auc
-        cv_metrics['CV '+str(cv+1)]['AUPRC'] = best_ap
-        cv_metrics['CV '+str(cv+1)]['F2-score'] = best_f2
-        cv_metrics['CV '+str(cv+1)]['CSP'] = csp
-        cv_metrics['CV '+str(cv+1)]['CSE'] = cse
-        cv_metrics['CV '+str(cv+1)]['BSNC'] = bsnc
-        cv_metrics['CV '+str(cv+1)]['BSPC'] = bspc
-        cv_metrics['CV '+str(cv+1)]['BS'] = bs
 
-
-for metric in metrics:
-    mean_metric = np.mean([cv_metrics["CV "+ str(cv+1)][metric] for cv in range(num_cv)])
-    std_metric = np.std([cv_metrics["CV "+ str(cv+1)][metric] for cv in range(num_cv)])
-    logger.info(str(metric) + " \t%s" % str(round(mean_metric,3))+" "+"("+str(round(std_metric,3))+")")
 

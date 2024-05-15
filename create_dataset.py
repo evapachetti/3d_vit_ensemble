@@ -4,15 +4,15 @@
 """
     
 
-import torch
-import pandas as pd
-import numpy as np
-from PIL import Image
+import torch # type: ignore
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
+from PIL import Image # type: ignore
 import os
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset # type: ignore
 
 class ProstateDataset(Dataset):
-    def __init__(self, input, aug_folder='Originale', size=128, ood=False, mean=0, var=1, bootstrap=False):
+    def __init__(self, input, aug_folder, size=128, ood=False, mean=0, var=1, bootstrap=False):
         
         if bootstrap:
             self.info = input
@@ -71,12 +71,6 @@ class ProstateDataset(Dataset):
 
 
 class ToTensorDataset(torch.utils.data.Subset):
-    """
-    Given a dataset, creates a dataset which applies a mapping function
-    to its items (lazily, only when an item is called).
-
-    Note that data is not cloned/copied from the initial dataset.
-    """
 
     def __init__(self, dataset, transform):
         self.dataset = dataset

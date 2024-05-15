@@ -3,19 +3,19 @@
 @author: Eva Pachetti
 """
 
-import torch.nn as nn
-import torch
+import torch.nn as nn # type: ignore
+import torch # type: ignore
 from models.modeling import VisionTransformer, TransformerEnsemble
-import numpy as np
-import torch.optim as optim
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from sklearn.metrics import balanced_accuracy_score, brier_score_loss, recall_score, roc_auc_score,fbeta_score, average_precision_score
+import numpy as np # type: ignore
+import torch.optim as optim # type: ignore
+import torchvision.transforms as transforms # type: ignore
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler # type: ignore
+from sklearn.metrics import balanced_accuracy_score, brier_score_loss, recall_score, roc_auc_score,fbeta_score, average_precision_score # type: ignore
 import os
 from itertools import combinations
 from tools import set_seed, normalize, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class,save_best_metrics
-from tqdm import tqdm
-import xlsxwriter
+from tqdm import tqdm # type: ignore
+import xlsxwriter # type: ignore
 from create_dataset import ProstateDataset, ToTensorDataset
 import logging
 
