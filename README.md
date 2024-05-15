@@ -2,6 +2,8 @@
 
 Official code for [3D-Vision-Transformer Stacking Ensemble for Assessing Prostate Cancer Aggressiveness from T2w Images](https://www.mdpi.com/2306-5354/10/9/1015) based on [Pytorch reimplementation](https://github.com/jeonsworld/ViT-pytorch) by [jeonsworld](https://github.com/jeonsworld) of [Google's repository for the ViT model](https://github.com/google-research/vision_transformer) [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929) by Alexey Dosovitskiy. 
 
+![vit_ensemble](./img/vit_ensemble.pdf)
+
 ## Dataset
 In the **dataset** folder, we provide access to the already pre-processed [Prostate-X 2](https://www.cancerimagingarchive.net/collection/prostatex/) dataset used to perform the experiments in our work. To see pre-processing details, please refer to our paper.
 
