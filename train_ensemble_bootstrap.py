@@ -1,130 +1,110 @@
 
 # -*- coding: utf-8 -*-
 """
-Created on Fri Dec  2 14:45:17 2022
-
-@author: Germanese
+@author: Eva Pachetti
 """
 
-import torch.nn as nn
-import torch
-from models.modeling import VisionTransformer
-import numpy as np
-import torch.optim as optim
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from sklearn.metrics import balanced_accuracy_score, brier_score_loss, recall_score, roc_auc_score,fbeta_score, average_precision_score
+import torch.nn as nn # type: ignore
+import torch # type: ignore
+from models.modeling import VisionTransformer, TransformerEnsemble
+import numpy as np # type: ignore
+import torch.optim as optim # type: ignore
+import torchvision.transforms as transforms # type: ignore
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler # type: ignore
+from sklearn.metrics import balanced_accuracy_score, brier_score_loss, recall_score, roc_auc_score,fbeta_score, average_precision_score # type: ignore
 import os
 from itertools import combinations
 from tools import set_seed, normalize, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class, save_best_metrics, bootstrapping, testing_model
-from tqdm import tqdm
-import xlsxwriter
-import logging
+from tqdm import tqdm # type: ignore
 from create_dataset import ProstateDataset, ToTensorDataset
-from create_dataset_bootstrapping import ProstateDataset as ProstateDatasetBoot
 
+import logging
+import xlsxwriter # type: ignore
 
+# Set reproducibility seed
+set_seed()
+
+# Set up logging
 logging.basicConfig(encoding='utf-8', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-Nrep = 3 # how many times repeat bootstrap
+# Set constants
+Nrep = 3  # how many times to repeat bootstrap
+train_batch_size = 4
+eval_batch_size = 1
+num_epochs = 100
+old_valid_loss = 100
+classes = ('LG','HG')
+best_choice = False
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Create Excel workbook and worksheet
 workbook = xlsxwriter.Workbook('Ensemble_Bootstrap.xlsx')
 worksheet = workbook.add_worksheet()
 bold = workbook.add_format({'bold': True})
 
-row = 1
-column = 0
-
-worksheet.write(row,column, 'Ensemble', bold)
+# Write headers
+row, column = 1, 0
+worksheet.write(row, column, 'Ensemble', bold)
 column = 1
-
-
-metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score','CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
-
+metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score', 'CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
 for metric in metrics:
-    worksheet.write(row,column, metric, bold)
+    worksheet.write(row, column, metric, bold)
     column += 1
 
+# Reset column and move to next row
 column = 0
-row +=1
+row += 1
 
 
-train_batch_size = 4
-eval_batch_size = 1
-
-
-class TransformerEnsemble(nn.Module):
-    def __init__(self, transformer_1, transformer_2, transformer_3, in_features=3, n_classes = 1):
-        super(TransformerEnsemble, self).__init__()
-        self.transformer_1 = transformer_1
-        self.transformer_2 = transformer_2
-        self.transformer_3 = transformer_3
-        
-        self.classifier = nn.Linear(in_features, n_classes)
-    
-    def forward(self,x1):
-        out1 = self.transformer_1(x1)[0]
-        out2 = self.transformer_2(x1)[0]
-        out3 = self.transformer_3(x1)[0]
-
-        x = torch.cat((out1,out2,out3), dim = 1)
-        out = torch.sigmoid(self.classifier(x))
-        
-        return out
-
-
-configurations = list(range(1,19))
+# Generate combinations
+configurations = range(1, 19)
 combs = list(combinations(configurations, 3))
-out_path = os.path.join(os.getcwd(),"output")
-net_path = os.path.join(out_path,"baseline_models") # directory where trained baseline models are stored
 
-criterion = torch.nn.BCELoss()
+# Define paths
+base_path = os.getcwd()
+output_path = os.path.join(base_path, "output")
+net_path = os.path.join(output_path, "baseline_models")  # directory where trained baseline models are stored
 
-csv_path = os.path.join(os.getcwd(),"csv_files","fixed_split")
-csv_file_train = os.path.join(csv_path,"training.csv") # training csv
-csv_file_val = os.path.join(csv_path,"validation.csv") # validation csv
-csv_file_test = os.path.join(csv_path,"test.csv") # test csv
+# Define file paths
+csv_path = os.path.join(base_path, "csv_files", "fixed_split")
+csv_file_train = os.path.join(csv_path, "training.csv")  # training csv
+csv_file_val = os.path.join(csv_path, "validation.csv")  # validation csv
+csv_file_test = os.path.join(csv_path, "test.csv")  # test csv
 
-for comb in combs: #for each combination compute bootstrap
+# Define criterion
+criterion = nn.BCELoss()
+
+# Training loop
+for comb in combs: #for each ensemble combination compute bootstrap
 
     logger.info("Ensemble combination #" + str(comb))
     
     results_val = {'Specificity':[], 'Sensitivity':[], 'Balanced Accuracy':[], 'AUROC':[], 'AUPRC':[], 'F2-score':[],'CSP':[], 'CSE':[], 'BSNC':[], 'BSPC':[], 'BS':[]} 
     results_test = {'Specificity':[], 'Sensitivity':[], 'Balanced Accuracy':[], 'AUROC':[], 'AUPRC':[], 'F2-score':[],'CSP':[], 'CSE':[], 'BSNC':[], 'BSPC':[], 'BS':[]} 
    
-    c_t1, c_t2, c_t3 = comb[0], comb[1], comb[2]
+    c_t1, c_t2, c_t3 = comb
+    ensemble_name = f"{c_t1}_{c_t2}_{c_t3}"
 
-    worksheet.write(row,column,str(c_t1)+"+"+str(c_t2)+"+"+str(c_t3))   
+    worksheet.write(row,column,ensemble_name)   
     column = 1
     worksheet.write(row,column,'Validation') 
     
-    ps1,dim1,n1,hs1,nh1 = parameters_config(c_t1)
-    ps2,dim2,n2,hs2,nh2 = parameters_config(c_t2)
-    ps3,dim3,n3,hs3,nh3 = parameters_config(c_t3)
- 
-    config_1, config_2, config_3 = get_config(ps1,dim1,n1,hs1,nh1), get_config(ps2,dim2,n2,hs2,nh2), get_config(ps3,dim3,n3,hs3,nh3)
-
-    #WD
-    PATH_1 = os.path.join(net_path,"Conf_"+str(c_t1)+"\Best_model_Conf_"+str(c_t1)+".bin")
-    PATH_2 = os.path.join(net_path,"Conf_"+str(c_t2)+"\Best_model_Conf_"+str(c_t2)+".bin")
-    PATH_3 = os.path.join(net_path,"Conf_"+str(c_t3)+"\Best_model_Conf_"+str(c_t3)+".bin")
-
+    # Load pre-trained transformers
+    transformer_paths = [os.path.join(net_path, f"Conf_{c}.bin") for c in [c_t1, c_t2, c_t3]]
+    transformers = [VisionTransformer(get_config(*parameters_config(c)), 128, zero_head=True, num_classes=1).load_state_dict(torch.load(path, map_location=device)) for path, c in zip(transformer_paths, comb)]
+    ensemble = TransformerEnsemble(*transformers).to(device)
+    optimizer = optim.Adam(ensemble.parameters(), lr=1e-4)
     
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     for k in tqdm(range(Nrep)): 
         
-        save_path = os.path.join(os.getcwd(),"output","Bootstrap_ensemble_models","Bootstrap_"+str(k)+".bin")
+        save_path = os.path.join(output_path,"bootstrap_ensemble_models","Bootstrap_"+str(k)+".bin")
 
-        set_seed()
-        
         boot_trainframe = bootstrapping(csv_file_train, k)
-        trainset = list(ProstateDatasetBoot(boot_trainframe)) #bootstrapped train
-        
+        trainset = list(ProstateDataset(boot_trainframe, bootstrap=True)) #bootstrapped train
         validset = list(ProstateDataset(csv_file_val))
         testset = list(ProstateDataset(csv_file_test))
-
 
         # normalize data
         volumes_train = [i[0] for i in trainset]
@@ -151,42 +131,17 @@ for comb in combs: #for each combination compute bootstrap
         
         testloader = torch.utils.data.DataLoader(testset_tf, batch_size=eval_batch_size, shuffle=False, num_workers=0)
 
-
-        # load pre-trained transformers (baseline version)    
-        transformer_1 = VisionTransformer(config_1, 128, zero_head=True, num_classes=1)
-        transformer_1.load_state_dict(torch.load(PATH_1, map_location=device))
-        
-        transformer_2 = VisionTransformer(config_2, 128, zero_head=True, num_classes=1)
-        transformer_2.load_state_dict(torch.load(PATH_2, map_location = device))
-        
-        transformer_3 = VisionTransformer(config_3, 128, zero_head=True, num_classes=1)
-        transformer_3.load_state_dict(torch.load(PATH_3, map_location = device))
-        
-        # define ensemble model
-        ensemble = TransformerEnsemble(transformer_1, transformer_2, transformer_3)
-        ensemble.to(device)
-        
-        optimizer = optim.Adam(ensemble.parameters(), lr= 1e-4)
-        num_epochs = 100
-        
         dset_loaders = {'train': train_loader, 'val': valid_loader}
-        classes = ('LG','HG')
         
         val_loss_array, train_loss_array, val_accuracy_array, train_accuracy_array, aucs = [], [], [], [], []
-        best_spec, best_sens, best_bacc, best_auc, best_aupr, best_f2 = 0,0,0,0,0,0
-        best_choice = False
-        old_valid_loss = 100
-    
-        #---TRAINING---
+        best_spec, best_sens, best_bacc, best_auc,best_aupr, best_f2, tl,pl, cp  = 0,0,0,0,0,0,0,0,0
 
         for epoch in range(num_epochs): 
-    
             predicted_labels, true_labels, class_probabilities = [],[],[]
-
             # Each epoch has a training and validation phase
             for phase in ['train', 'val']:
                 if phase == 'train':
-                    ensemble.train(True)
+                    ensemble.train()
                 else:
                     ensemble.eval()
                     
@@ -194,17 +149,12 @@ for comb in combs: #for each combination compute bootstrap
                 running_corrects = 0.0
         
                 for data in dset_loaders[phase]:
-                    
-                    inputs,labels = data[0], data[1]
-                    inputs, labels = inputs.float().to(device), labels.float().to(device)
-
-                    optimizer.zero_grad() 
-                    
+                    inputs,labels = data[0].float().to(device), data[1].float().to(device)
+                    optimizer.zero_grad()      
                     outputs = ensemble(inputs)
-                    if len(outputs)>1:
-                        outputs = torch.squeeze(outputs)
-                    else: 
-                        outputs = torch.squeeze(outputs).unsqueeze(0)
+                    outputs = torch.squeeze(outputs)
+                    if outputs.dim() == 0:
+                        outputs = outputs.unsqueeze(0)
                                     
                     loss = criterion(outputs,labels)
                     
@@ -256,6 +206,7 @@ for comb in combs: #for each combination compute bootstrap
                             if roc_auc > best_auc:
                                 best_spec, best_sens, best_bacc, best_auc,best_aupr, best_f2, tl,pl, cp = save_best_metrics(save_path, ensemble, specificity, sensitivity, b_accuracy, roc_auc, pr_auc, f2_score, true_labels, predicted_labels, class_probabilities)
                                                                                                                             
+        
         # Confidence metrices        
         csp,cse = calculate_confidence_metrics(tl, pl, cp) 
         bs = brier_score_loss(tl, cp)
@@ -263,17 +214,22 @@ for comb in combs: #for each combination compute bootstrap
         bspc = brier_score_one_class(tl, cp, cl = 1)
                     
         
-        results_val['Specificity'].append(best_spec)
-        results_val['Sensitivity'].append(best_sens)
-        results_val['Balanced Accuracy'].append(best_bacc)
-        results_val['AUROC'].append(best_auc)
-        results_val['AUPRC'].append(best_aupr)
-        results_val['F2-score'].append(best_f2)
-        results_val['CSP'].append(csp)
-        results_val['CSE'].append(cse)
-        results_val['BSNC'].append(bsnc)
-        results_val['BSPC'].append(bspc)
-        results_val['BS'].append(bs)
+        metrics_list = [
+            ('Specificity', best_spec),
+            ('Sensitivity', best_sens),
+            ('Balanced Accuracy', best_bacc),
+            ('AUROC', best_auc),
+            ('AUPRC', best_aupr),
+            ('F2-score', best_f2),
+            ('CSP', csp),
+            ('CSE', cse),
+            ('BSNC', bsnc),
+            ('BSPC', bspc),
+            ('BS', bs)
+        ]
+
+        for key, value in metrics_list:
+            results_val[key].append(value)
         
         ### HOLD-OUT-TEST ###
         true_labels_t, predicted_labels_t, class_probabilities_t, features_vectors = testing_model(testloader, ensemble,device)
@@ -290,17 +246,22 @@ for comb in combs: #for each combination compute bootstrap
         bsnc = brier_score_one_class(true_labels_t, class_probabilities_t, cl = 0)
         bspc = brier_score_one_class(true_labels_t, class_probabilities_t, cl = 1)
         
-        results_test['Specificity'].append(specificity)
-        results_test['Sensitivity'].append(sensitivity)
-        results_test['Balanced Accuracy'].append(b_accuracy)
-        results_test['AUROC'].append(roc_auc)
-        results_test['AUPRC'].append(pr_auc)
-        results_test['F2-score'].append(f2_score)
-        results_test['CSP'].append(csp)
-        results_test['CSE'].append(cse)
-        results_test['BSNC'].append(bsnc)
-        results_test['BSPC'].append(bspc)
-        results_test['BS'].append(bs)
+        metrics_list_test = [
+            ('Specificity', specificity),
+            ('Sensitivity', sensitivity),
+            ('Balanced Accuracy', b_accuracy),
+            ('AUROC', roc_auc),
+            ('AUPRC', pr_auc),
+            ('F2-score', f2_score),
+            ('CSP', csp),
+            ('CSE', cse),
+            ('BSNC', bsnc),
+            ('BSPC', bspc),
+            ('BS', bs)
+        ]
+
+        for key, value in metrics_list_test:
+            results_test[key].append(value)
         
 
         for metric in metrics:
@@ -316,7 +277,7 @@ for comb in combs: #for each combination compute bootstrap
        
    
     for metric in metrics:
-        np.save(os.path.join(out_path,"Bootstrap_results_"+metric),results_test[metric])
+        np.save(os.path.join(output_path,"Bootstrap_results_"+metric),results_test[metric])
 
     row += 2
     column = 0

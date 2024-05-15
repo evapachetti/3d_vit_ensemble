@@ -5,7 +5,7 @@
 
 import torch.nn as nn
 import torch
-from models.modeling import VisionTransformer
+from models.modeling import VisionTransformer, TransformerEnsemble
 import numpy as np
 import torch.optim as optim
 import torchvision.transforms as transforms
@@ -19,97 +19,82 @@ import xlsxwriter
 from create_dataset import ProstateDataset, ToTensorDataset
 import logging
 
+# Set reproducibility seed
+set_seed()
+
+# Set up logging
 logging.basicConfig(encoding='utf-8', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set constants
+cv = 5 # default is 5-fold CV
+train_batch_size = 4
+eval_batch_size = 1
+num_epochs = 100
+old_valid_loss = 100
+classes = ('LG','HG')
+best_choice = False
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-workbook = xlsxwriter.Workbook('Ensemble.xlsx')
+
+# Create Excel workbook and worksheet
+workbook = xlsxwriter.Workbook('Ensemble_Bootstrap.xlsx')
 worksheet = workbook.add_worksheet()
 bold = workbook.add_format({'bold': True})
 
-row = 1
-column = 0
-
-worksheet.write(row,column, 'Ensemble', bold)
+# Write headers
+row, column = 1, 0
+worksheet.write(row, column, 'Ensemble', bold)
 column = 1
-
-
-metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score','CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
+metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score', 'CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
 
 for metric in metrics:
-    worksheet.write(row,column, metric, bold)
+    worksheet.write(row, column, metric, bold)
     column += 1
 
+# Reset column and move to next row
 column = 0
-row +=1
+row += 1
 
 
-train_batch_size = 4
-eval_batch_size = 1
-
-
-class TransformerEnsemble(nn.Module):
-    def __init__(self, transformer_1, transformer_2,transformer_3, in_features=3, n_classes = 1):
-        super(TransformerEnsemble, self).__init__()
-        self.transformer_1 = transformer_1
-        self.transformer_2 = transformer_2
-        self.transformer_3 = transformer_3
-        
-        self.classifier = nn.Linear(in_features, n_classes)
-    
-    def forward(self,x1):
-        out1 = self.transformer_1(x1)[0]
-        out2 = self.transformer_2(x1)[0]
-        out3 = self.transformer_3(x1)[0]
-
-        x = torch.cat((out1,out2,out3), dim = 1)
-        out = torch.sigmoid(self.classifier(x))
-        
-        return out
-
-cv = 5 # default is 5-fold CV
-
-configurations = list(range(1,19))
+# Generate combinations
+configurations = range(1, 19)
 combs = list(combinations(configurations, 3))
-combs = [tuple(combs[combs.index((5,9,11))])]
-net_path = os.path.join(os.getcwd(),"output","baseline_models") # directory where trained baseline models are stored
-out_path = os.path.join(os.getcwd(),"output")
 
-criterion = torch.nn.BCELoss()
+# Define paths
+base_path = os.getcwd()
+output_path = os.path.join(base_path, "output")
+net_path = os.path.join(output_path, "baseline_models")  # directory where trained baseline models are stored
 
-csv_path = os.path.join(os.getcwd(),"csv_files","cross_validation")
+# Define file paths
+csv_path = os.path.join(base_path, "csv_files", "cross_validation")
 
+# Define criterion
+criterion = nn.BCELoss()
 
+# Trainin loop
 for comb in tqdm(combs): 
 
     logger.info("Ensemble combination #" + str(comb))
 
     results = {} #results of each combination in k-fold CV
-    c_t1, c_t2, c_t3 = comb[0], comb[1], comb[2]
+    c_t1, c_t2, c_t3 = comb
+    ensemble_name = f"{c_t1}_{c_t2}_{c_t3}"
   
-    worksheet.write(row,column,str(c_t1)+"+"+str(c_t2))   
+    worksheet.write(row,column,ensemble_name)   
     column = 1
     worksheet.write(row,column,'Validation') 
     
-    ps1,dim1,n1,hs1,nh1 = parameters_config(c_t1)
-    ps2,dim2,n2,hs2,nh2 = parameters_config(c_t2)
-    ps3,dim3,n3,hs3,nh3 = parameters_config(c_t3)
- 
-    config_1, config_2, config_3 = get_config(ps1,dim1,n1,hs1,nh1), get_config(ps2,dim2,n2,hs2,nh2), get_config(ps3,dim3,n3,hs3,nh3)
-  
-    PATH_1 = os.path.join(net_path,"Conf_"+str(c_t1),"Best_model_Conf_"+str(c_t1)+".bin") # Best trained baseline model for each configuration
-    PATH_2 = os.path.join(net_path,"Conf_"+str(c_t2),"Best_model_Conf_"+str(c_t2)+".bin")
-    PATH_3 = os.path.join(net_path,"Conf_"+str(c_t3),"Best_model_Conf_"+str(c_t3)+".bin")
-
-    
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # Load pre-trained transformers
+    transformer_paths = [os.path.join(net_path, f"Conf_{c}.bin") for c in [c_t1, c_t2, c_t3]]
+    transformers = [VisionTransformer(get_config(*parameters_config(c)), 128, zero_head=True, num_classes=1).load_state_dict(torch.load(path, map_location=device)) for path, c in zip(transformer_paths, comb)]
+    ensemble = TransformerEnsemble(*transformers).to(device)
+    optimizer = optim.Adam(ensemble.parameters(), lr=1e-4)
     
     for k in tqdm(range(cv)): # k-fold CV
     
         logger.info("Cross-validation fold #" + str(k+1))
-        save_path = os.path.join(out_path,"cv_"+str(k+1)+".bin")
-
-        set_seed()
+        save_path = os.path.join(output_path,"cv_"+str(k+1)+".bin")
         
         results["CV" +str(k+1)] = {} # results of configuration comb at this cv
 
@@ -142,33 +127,13 @@ for comb in tqdm(combs):
                                  num_workers=0,
                                  pin_memory=True) if validset is not None else None
 
-        # load pre-trained transformers (baseline version)
-        transformer_1 = VisionTransformer(config_1, 128, zero_head=True, num_classes=1)
-        transformer_1.load_state_dict(torch.load(PATH_1, map_location=device))
-        
-        transformer_2 = VisionTransformer(config_2, 128, zero_head=True, num_classes=1)
-        transformer_2.load_state_dict(torch.load(PATH_2, map_location = device))
-        
-        transformer_3 = VisionTransformer(config_3, 128, zero_head=True, num_classes=1)
-        transformer_3.load_state_dict(torch.load(PATH_3, map_location = device))
-        
-        # define ensemble model
-        ensemble = TransformerEnsemble(transformer_1, transformer_2, transformer_3)
-        ensemble.to(device)
-        
-        optimizer = optim.Adam(ensemble.parameters(), lr= 1e-4)
-        num_epochs = 100
+      
         
         dset_loaders = {'train': train_loader, 'val': valid_loader}
-        classes = ('LG','HG')
         
         val_loss_array, train_loss_array, val_accuracy_array, train_accuracy_array, aucs = [], [], [], [], []
-        best_spec, best_sens, best_bacc, best_auc, best_aupr, best_f2 = 0,0,0,0,0,0
-        best_choice = False
-        old_valid_loss = 100
-    
+        best_spec, best_sens, best_bacc, best_auc, best_aupr, best_f2 = 0,0,0,0,0,0    
 
-        #---TRAINING---
         
         for epoch in range(num_epochs): 
     
@@ -185,16 +150,11 @@ for comb in tqdm(combs):
         
                 for data in dset_loaders[phase]:
                     
-                    inputs,labels = data[0], data[1]
-                    inputs, labels = inputs.float().to(device), labels.float().to(device)
-                    
+                    inputs,labels = data[0].float().to(device), data[1].float().to(device)                    
                     optimizer.zero_grad() 
                     outputs = ensemble(inputs)
-
-                    if len(outputs)>1:
-                        outputs = torch.squeeze(outputs)
-                    else: 
-                        outputs = torch.squeeze(outputs).unsqueeze(0)
+                    if outputs.dim() == 0:
+                        outputs = outputs.unsqueeze(0)
                                     
                     loss = criterion(outputs,labels)
                     
@@ -251,18 +211,21 @@ for comb in tqdm(combs):
         bspc = brier_score_one_class(tl, cp, cl = 1)
                     
         
-        results["CV"+ str(k+1)]['Specificity'] = best_spec
-        results["CV"+ str(k+1)]['Sensitivity'] = best_sens
-        results["CV"+ str(k+1)]['Balanced Accuracy'] = best_bacc
-        results["CV"+ str(k+1)]['AUROC'] = best_auc
-        results["CV"+ str(k+1)]['AUPRC'] = best_aupr
-        results["CV"+ str(k+1)]['F2-score'] = best_f2
-        results["CV"+ str(k+1)]['CSP'] = csp
-        results["CV"+ str(k+1)]['CSE'] = cse
-        results["CV"+ str(k+1)]['BSNC'] = bsnc
-        results["CV"+ str(k+1)]['BSPC'] = bspc
-        results["CV"+ str(k+1)]['BS'] = bs
+        metrics_dict = {
+            'Specificity': best_spec,
+            'Sensitivity': best_sens,
+            'Balanced Accuracy': best_bacc,
+            'AUROC': best_auc,
+            'AUPRC': best_aupr,
+            'F2-score': best_f2,
+            'CSP': csp,
+            'CSE': cse,
+            'BSNC': bsnc,
+            'BSPC': bspc,
+            'BS': bs}
 
+        for metric, value in metrics_dict.items():
+            results[f"CV{k+1}"][metric] = value
 
     for metric in metrics:
         mean_metric = np.mean([results["CV"+ str(k+1)][metric] for k in range(cv)])

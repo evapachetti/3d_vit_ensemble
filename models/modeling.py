@@ -346,6 +346,18 @@ class VisionTransformer(nn.Module):
                 for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
                     for uname, unit in block.named_children():
                         unit.load_from(weights, n_block=bname, n_unit=uname)
+                        
+
+class TransformerEnsemble(nn.Module):
+    def __init__(self, *transformers, in_features=3, n_classes=1):
+        super(TransformerEnsemble, self).__init__()
+        self.transformers = nn.ModuleList(transformers)
+        self.classifier = nn.Linear(len(transformers) * in_features, n_classes)
+    
+    def forward(self, x):
+        outputs = [transformer(x)[0] for transformer in self.transformers]
+        concatenated_output = torch.cat(outputs, dim=1)
+        return torch.sigmoid(self.classifier(concatenated_output))
 
 
 CONFIGS = {
