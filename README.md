@@ -7,20 +7,21 @@ In the "dataset" folder, we provide access to the already pre-processed [Prostat
 
 ## Usage
 
-# 1. Train baseline ViTs using CV or bootstrapping techniques
-
+### 1. Train baseline ViTs using CV or bootstrapping techniques
+```
 python train_baseline_cv.py 
 python train_baseline_bootstrap.py
+```
 
-# 2. Train ensemble ViTs using CV or bootstrapping techniques
-
+### 2. Train ensemble ViTs using CV or bootstrapping techniques
+```
 python train_ensemble_cv.py 
 python train_ensemble_bootstrap.py
-
-# 3. Test baseline and ensemble ViTs trained according to CV
-
+```
+### 3. Test baseline and ensemble ViTs trained according to CV
+```
 python test.py
-
+```
 
 ## Citations
 
