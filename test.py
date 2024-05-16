@@ -24,10 +24,7 @@ import argparse
 
 def test_baseline(args):
     
-    # Define model based on chosen configuration
-    ps, dim, n, hs, nh = parameters_config(args.conf)
-    config = get_config(ps, dim, n, hs, nh)
-    model = VisionTransformer(config, args.image_size, zero_head=False, num_classes=1, vis=True)
+    model = VisionTransformer(get_config(*parameters_config(args.conf)),args.image_size, zero_head=False, num_classes=1, vis=True)
 
     # Initialize results dictionaries
     res_base = {}

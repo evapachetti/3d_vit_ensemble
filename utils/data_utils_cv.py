@@ -16,11 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_loader(args,cv):
-    if args.local_rank not in [-1, 0]:
-        torch.distributed.barrier()
-
-    csv_file_train = os.path.join(args.csv_path, f"training_cv{cv}.csv")
-    csv_file_val = os.path.join(args.csv_path, f"validation_cv{cv}.csv")
+ 
+    csv_file_train = os.path.join(args.csv_path, f"training_cv{cv+1}.csv")
+    csv_file_val = os.path.join(args.csv_path, f"validation_cv{cv+1}.csv")
 
     trainset = list(ProstateDataset(csv_file_train))
     validset = list(ProstateDataset(csv_file_val))
@@ -45,13 +43,10 @@ def get_loader(args,cv):
     trainset = normalize(trainset, mean)
     validset = normalize(validset, mean)
 
-    trainset = ToTensorDataset(trainset, transforms.ToTensor())
-    validset = ToTensorDataset(validset, transforms.ToTensor())
+    trainset = ToTensorDataset(trainset)
+    validset = ToTensorDataset(validset)
 
-    if args.local_rank == 0:
-        torch.distributed.barrier()
-
-    train_sampler = RandomSampler(trainset) if args.local_rank == -1 else DistributedSampler(trainset)
+    train_sampler = RandomSampler(trainset) 
     valid_sampler = SequentialSampler(validset)
     train_loader = DataLoader(trainset, sampler=train_sampler, batch_size=args.train_batch_size, num_workers=0, pin_memory=True)
     valid_loader = DataLoader(validset, sampler=valid_sampler, batch_size=args.eval_batch_size, num_workers=0, pin_memory=True) if validset else None

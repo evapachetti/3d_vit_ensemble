@@ -12,7 +12,7 @@ import os
 from torch.utils.data import Dataset # type: ignore
 
 class ProstateDataset(Dataset):
-    def __init__(self, input, aug_folder, size=128, ood=False, mean=0, var=1, bootstrap=False):
+    def __init__(self, input, aug_folder="original", size=128, ood=False, mean=0, var=1, bootstrap=False):
         
         if bootstrap:
             self.info = input
@@ -72,15 +72,13 @@ class ProstateDataset(Dataset):
 
 class ToTensorDataset(torch.utils.data.Subset):
 
-    def __init__(self, dataset, transform):
+    def __init__(self, dataset):
         self.dataset = dataset
-        self.transform = transform
 
     def __getitem__(self, idx):
         volume, label = self.dataset[idx][:2]  # Slicing for volume and label
         volume = torch.from_numpy(volume).float().permute(3, 0, 1, 2)  # Convert to tensor and permute dimensions
-        if self.transform:
-            volume = self.transform(volume)  # Apply transformation
+
         return volume, label
 
     def __len__(self):

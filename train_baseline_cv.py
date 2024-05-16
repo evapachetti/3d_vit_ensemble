@@ -9,10 +9,8 @@ import logging
 import argparse
 import os
 import numpy as np # type: ignore
-from datetime import timedelta
 import torch # type: ignore
 from tqdm import tqdm # type: ignore
-from torch.utils.tensorboard import SummaryWriter # type: ignore
 from models.modeling import VisionTransformer
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils_cv import get_loader
@@ -22,14 +20,13 @@ import random
 from tools import set_seed, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class
 
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 def set_seed(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -60,27 +57,20 @@ def setup(args):
     model = VisionTransformer(get_config(*parameters_config(args.config)), args.img_size, zero_head=True, num_classes=args.num_classes)
     model.to(args.device)
     num_params = count_parameters(model)
-    logger.info("Training parameters %s", args)
-    logger.info("Total Parameter: \t%2.1fM" % num_params)
     print(num_params)
     return args, model
 
 
-def valid(args, model, writer, test_loader, global_step):
+def valid(args, model, test_loader, global_step):
     
     predicted_labels, true_labels, class_probabilities, features_vectors = [], [], [], []
     eval_losses = AverageMeter()
-
-    logger.info("***** Running Validation *****")
-    logger.info("  Num steps = %d", len(test_loader))
-    logger.info("  Batch size = %d", args.eval_batch_size)
 
     model.eval()
     epoch_iterator = tqdm(test_loader,
                           desc="Validating... (loss=X.X)",
                           bar_format="{l_bar}{r_bar}",
-                          dynamic_ncols=True,
-                          disable=args.local_rank not in [-1, 0])
+                          dynamic_ncols=True)
     for step, batch in enumerate(epoch_iterator):
         batch = tuple(t.to(args.device) for t in batch)
         x, y = batch
@@ -91,11 +81,12 @@ def valid(args, model, writer, test_loader, global_step):
             p = torch.sigmoid(output) 
             predicted = 1 * (p > 0.5)
 
-            true_labels.append(y.item())
-            predicted_labels.append(predicted)    
+            true_labels.append(int(y.item()))
+            predicted_labels.append(int(predicted.item()))    
             class_probabilities.append(p)
-            features_vectors.append(np.array(features_v))
-            
+            features_vectors.append(features_v.cpu().numpy())
+        
+    
         epoch_iterator.set_description("Validating... (loss=%2.5f)" % eval_losses.val)
     
     class_probabilities = [i.item() for i in class_probabilities]
@@ -107,17 +98,12 @@ def valid(args, model, writer, test_loader, global_step):
     f2_score = fbeta_score(true_labels, predicted_labels, beta = 2) #F2-score
     ap_score = average_precision_score(true_labels,class_probabilities) #AUPRC
 
-    writer.add_scalar("test/accuracy", scalar_value=b_accuracy, global_step=global_step)
     return specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score,true_labels, predicted_labels, class_probabilities
 
 
 
 def train(args, model,cv):
     """ Train the model """
-  
-    if args.local_rank in [-1, 0]:
-        os.makedirs(args.output_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=os.path.join("logs", args.name))
 
     args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
 
@@ -131,15 +117,6 @@ def train(args, model,cv):
         scheduler = WarmupCosineSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
         scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
-  
-    # Train!
-    logger.info("***** Running training *****")
-    logger.info("  Total optimization steps = %d", args.num_steps)
-    logger.info("  Instantaneous batch size per GPU = %d", args.train_batch_size)
-    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-                args.train_batch_size * args.gradient_accumulation_steps * (
-                    torch.distributed.get_world_size() if args.local_rank != -1 else 1))
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
 
     set_seed(args)  
     losses = AverageMeter()
@@ -150,11 +127,11 @@ def train(args, model,cv):
     
     def save_model(args, model,cv):
         model_to_save = model.module if hasattr(model, 'module') else model
-        save_conf_dir = os.path.join(args.output_dir, f"conf{args.config}")
+        save_conf_dir = os.path.join(args.output_dir, "baseline_models", f"conf{args.config}")
         os.makedirs(save_conf_dir, exist_ok=True)
         model_checkpoint = os.path.join(save_conf_dir, f"cv{cv+1}.bin")
         torch.save(model_to_save.state_dict(), model_checkpoint)
-        logger.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
+        logging.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
     
     def save_best_metrics(args,model,specificity,sensitivity,b_accuracy,roc_auc,f2_score,ap_score,true_labels, predicted_labels, class_probabilities):
                 best_spec = specificity
@@ -167,11 +144,11 @@ def train(args, model,cv):
                 pl = predicted_labels
                 cp = class_probabilities
 
-                save_model(args, model)
+                save_model(args, model,cv)
         
                 return best_spec, best_sens, best_acc, best_auc, best_f2, best_ap,tl,pl,cp
                     
-    logger.info(f"***** Running Cross Validation {args.cv}*****")
+    logging.info(f"***** Running Cross Validation {cv+1}*****")
 
 
     while True: 
@@ -182,14 +159,13 @@ def train(args, model,cv):
         epoch_iterator = tqdm(train_loader,
                               desc="Training (X / X Steps) (loss=X.X)",
                               bar_format="{l_bar}{r_bar}",
-                              dynamic_ncols=True,
-                              disable=args.local_rank not in [-1, 0])
+                              dynamic_ncols=True)
         for step, batch in enumerate(epoch_iterator):
             batch = tuple(t.to(args.device) for t in batch)
             x, y = batch
             y = y.float()
             
-            weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y), y=y.numpy())
+            weights = class_weight.compute_class_weight(class_weight='balanced', classes=np.unique(y.cpu().numpy()), y=y.cpu().numpy())
             weights = torch.tensor(weights[1] if len(weights) > 1 else weights[0])
 
             loss = model(x, y, weights)
@@ -201,35 +177,31 @@ def train(args, model,cv):
 
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 losses.update(loss.item()*args.gradient_accumulation_steps)
-                scheduler.step()
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
                 global_step += 1
                     
                 epoch_iterator.set_description(
                     "Training (%d / %d Steps) (loss=%2.5f)" % (global_step, t_total, losses.val)
                 )
-                if args.local_rank in [-1, 0]:
-                    writer.add_scalar("train/loss", scalar_value=losses.val, global_step=global_step)
-                    writer.add_scalar("train/lr", scalar_value=scheduler.get_lr()[0], global_step=global_step)
-                if global_step % args.eval_every == 0 and args.local_rank in [-1, 0]:
-                    specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities= valid(args, model, writer, test_loader, global_step)
+                if global_step % args.eval_every == 0:
+                    specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities= valid(args, model, test_loader, global_step)
+                    logging.info(f"AUROC: {roc_auc}")
                     
-                    logger.info("ROC AUC: \t%f" % roc_auc)
-                    
-                # Custom decision process to ensure both spec and sens > 0.6; otherwise, look at AUROC alone
-                if specificity > 0.6 and sensitivity > 0.6:
-                    if not best_choice or roc_auc > best_auc:
-                        best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
-                            args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
-                        )
-                        best_choice = True
-                else:
-                    if not best_choice and roc_auc > best_auc:
-                        best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
-                            args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
-        )
-                    model.train()                    
+                    # Custom decision process to ensure both spec and sens > 0.6; otherwise, look at AUROC alone
+                    if specificity > 0.6 and sensitivity > 0.6:
+                        if not best_choice or roc_auc > best_auc:
+                            best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
+                                args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
+                            )
+                            best_choice = True
+                    else:
+                        if not best_choice and roc_auc > best_auc:
+                            best_spec, best_sens, best_acc, best_auc, best_f2, best_ap, tl, pl, cp = save_best_metrics(
+                                args, model, specificity, sensitivity, b_accuracy, roc_auc, f2_score, ap_score, true_labels, predicted_labels, class_probabilities
+            )
+                        model.train()                    
                 
                 if global_step % t_total == 0:
                     break
@@ -239,10 +211,7 @@ def train(args, model,cv):
     
         if global_step % t_total == 0:
             break
-    
-    if args.local_rank in [-1, 0]:
-        writer.close()
-    
+  
     return best_spec, best_sens, best_acc, best_auc, best_ap, best_f2, tl,pl,cp
         
 
@@ -252,7 +221,7 @@ def train(args, model,cv):
 def main():
     parser = argparse.ArgumentParser()
     # Required parameters
-    parser.add_argument("--name", required=True,
+    parser.add_argument("--name", default="prostateX",
                         help="Name of this run. Used for monitoring.")
     parser.add_argument("--dataset", choices=["prostateX"], default="prostateX",
                         help="Which downstream task.")
@@ -262,9 +231,9 @@ def main():
                         default=1, help="Number of output classes.")
     parser.add_argument("--num_cv", type=int,
                         default=5, help="How many folds in CV.")
-    parser.add_argument("--output_dir", type=str,
+    parser.add_argument("--output_dir", type=str, default = os.path.join(os.getcwd(),"output"),
                         help="The output directory where checkpoints will be written.")
-    parser.add_argument("--csv_path",  required=True, default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
+    parser.add_argument("--csv_path", default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
                         help="Path where csv files are stored.")
     parser.add_argument("--img_size", default=128, type=int,
                         help="Resolution size")
@@ -279,7 +248,7 @@ def main():
                         help="The initial learning rate for SGD.")
     parser.add_argument("--weight_decay", default=1e-2, type=float,
                         help="Weight deay if we apply some.")
-    parser.add_argument("--num_steps", default=1000, type=int,
+    parser.add_argument("--num_steps", default=100, type=int,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--decay_type", choices=["cosine", "linear"], default="cosine",
                         help="How to decay the learning rate.")
