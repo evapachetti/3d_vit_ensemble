@@ -22,7 +22,6 @@ from torch.nn import Dropout, Softmax, Linear, Conv3d, LayerNorm, BCEWithLogitsL
 from torch.nn.modules.utils import _pair # type: ignore
 from scipy import ndimage # type: ignore
 
-import models.configs as configs
 from .modeling_resnet import ResNetV2
 
 
@@ -356,14 +355,3 @@ class TransformerEnsemble(nn.Module):
         concatenated_output = torch.cat(outputs, dim=1)
         return torch.sigmoid(self.classifier(concatenated_output))
 
-
-CONFIGS = {
-    'ViT-B_16': configs.get_b16_config(),
-    'ViT-B_32': configs.get_b32_config(),
-    'ViT-L_16': configs.get_l16_config(),
-    'ViT-L_32': configs.get_l32_config(),
-    'ViT-H_14': configs.get_h14_config(),
-    'R50-ViT-B_16': configs.get_r50_b16_config(),
-    'EvaViT': configs.get_eva_config(),
-    'testing': configs.get_testing(),
-}

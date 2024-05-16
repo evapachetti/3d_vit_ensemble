@@ -96,7 +96,7 @@ for comb in tqdm(combs):
         logger.info("Cross-validation fold #" + str(k+1))
         save_path = os.path.join(output_path,"cv_"+str(k+1)+".bin")
         
-        results["CV" +str(k+1)] = {} # results of configuration comb at this cv
+        results[f"CV {k+1}"] = {} # results of configuration comb at this cv
 
         csv_file_train = os.path.join(csv_path,"training_cv"+str(k+1)+".csv") # training k-cv csv
         csv_file_val = os.path.join(csv_path,"validation_cv"+str(k+1)+".csv") # validation k-cv csv

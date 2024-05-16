@@ -13,20 +13,16 @@ from datetime import timedelta
 import torch # type: ignore
 from tqdm import tqdm # type: ignore
 from torch.utils.tensorboard import SummaryWriter # type: ignore
-from models.modeling import VisionTransformer, CONFIGS
+from models.modeling import VisionTransformer
 from utils.scheduler import WarmupLinearSchedule, WarmupCosineSchedule
 from utils.data_utils_cv import get_loader
 from sklearn.metrics import balanced_accuracy_score, recall_score, roc_auc_score,fbeta_score, average_precision_score,brier_score_loss # type: ignore
 from sklearn.utils import class_weight # type: ignore
 import random
+from tools import set_seed, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class
 
-
-num_cv = 5
 
 logger = logging.getLogger(__name__)
-
-cv_metrics = {'CV 1':{}, 'CV 2':{}, 'CV 3':{}, 'CV 4':{}, 'CV 5':{}} 
-metrics = ['Specificity', 'Sensitivity', 'Balanced Accuracy', 'AUROC', 'AUPRC', 'F2-score','CSP', 'CSE', 'BSNC', 'BSPC', 'BS']
 
 def set_seed(args):
     random.seed(args.seed)
@@ -59,20 +55,15 @@ def count_parameters(model):
 
 def setup(args):
     # Prepare model
-    config = CONFIGS[args.model_type]
-
-    num_classes = 1
-
-    model = VisionTransformer(config, args.img_size, zero_head=True, num_classes=num_classes)
+    assert args.config < 19
+    assert args.config > 1 # Only configs between 1 and 18 are defined
+    model = VisionTransformer(get_config(*parameters_config(args.config)), args.img_size, zero_head=True, num_classes=args.num_classes)
     model.to(args.device)
     num_params = count_parameters(model)
-
-    logger.info("{}".format(config))
     logger.info("Training parameters %s", args)
     logger.info("Total Parameter: \t%2.1fM" % num_params)
     print(num_params)
     return args, model
-
 
 
 def valid(args, model, writer, test_loader, global_step):
@@ -121,7 +112,7 @@ def valid(args, model, writer, test_loader, global_step):
 
 
 
-def train(args, model, cv):
+def train(args, model,cv):
     """ Train the model """
   
     if args.local_rank in [-1, 0]:
@@ -157,9 +148,11 @@ def train(args, model, cv):
     best_spec, best_sens, best_acc, best_auc,best_f2,best_ap = 0,0,0,0,0,0
     best_choice = False
     
-    def save_model(args, model):
+    def save_model(args, model,cv):
         model_to_save = model.module if hasattr(model, 'module') else model
-        model_checkpoint = os.path.join(args.output_dir, "cv_"+str(cv+1)+".bin")
+        save_conf_dir = os.path.join(args.output_dir, f"conf{args.config}")
+        os.makedirs(save_conf_dir, exist_ok=True)
+        model_checkpoint = os.path.join(save_conf_dir, f"cv{cv+1}.bin")
         torch.save(model_to_save.state_dict(), model_checkpoint)
         logger.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
     
@@ -178,12 +171,12 @@ def train(args, model, cv):
         
                 return best_spec, best_sens, best_acc, best_auc, best_f2, best_ap,tl,pl,cp
                     
-    logger.info("***** Running Cross Validation "+str(cv+1)+" *****")
+    logger.info(f"***** Running Cross Validation {args.cv}*****")
 
 
     while True: 
         # Prepare dataset
-        train_loader, test_loader = get_loader(args, cv)
+        train_loader, test_loader = get_loader(args,cv)
 
         model.train()
         epoch_iterator = tqdm(train_loader,
@@ -256,19 +249,23 @@ def train(args, model, cv):
     
 
 
-def main(cv):
+def main():
     parser = argparse.ArgumentParser()
     # Required parameters
     parser.add_argument("--name", required=True,
                         help="Name of this run. Used for monitoring.")
     parser.add_argument("--dataset", choices=["prostateX"], default="prostateX",
                         help="Which downstream task.")
-    parser.add_argument("--model_type", choices=["ViT-B_16", "ViT-B_32", "ViT-L_16",
-                                                 "ViT-L_32", "ViT-H_14", "R50-ViT-B_16", "EvaViT"],
-                        default="ViT-B_16",
-                        help="Which variant to use.")
+    parser.add_argument("--config", type=int,
+                        default=5, help="Which configuration to use.")
+    parser.add_argument("--num_classes", type=int,
+                        default=1, help="Number of output classes.")
+    parser.add_argument("--num_cv", type=int,
+                        default=5, help="How many folds in CV.")
     parser.add_argument("--output_dir", type=str,
                         help="The output directory where checkpoints will be written.")
+    parser.add_argument("--csv_path",  required=True, default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
+                        help="Path where csv files are stored.")
     parser.add_argument("--img_size", default=128, type=int,
                         help="Resolution size")
     parser.add_argument("--train_batch_size", default=4, type=int,
@@ -288,53 +285,55 @@ def main(cv):
                         help="How to decay the learning rate.")
     parser.add_argument("--warmup_steps", default=1000, type=int,
                         help="Step of training to perform learning rate warmup for.")
-    parser.add_argument("--local_rank", type=int, default=-1,
-                        help="local_rank for distributed training on gpus")
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument('--fp16', action='store_true',
-                        help="Whether to use 16-bit float precision instead of 32-bit")
+    parser.add_argument("--device", default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                        help="Device to compute operations.")
     args = parser.parse_args()
     
-        
-    # Setup CUDA, GPU & distributed training
-    if args.local_rank == -1:
-        #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        device = torch.device("cpu")
-        args.n_gpu = torch.cuda.device_count()
-    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
-        torch.cuda.set_device(args.local_rank)
-        device = torch.device("cuda", args.local_rank)
-        torch.distributed.init_process_group(backend='nccl',
-                                             timeout=timedelta(minutes=60))
-        args.n_gpu = 1
-    args.device = device
-
-    # Setup logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S',
-                        level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
-    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s" %
-                   (args.local_rank, args.device, args.n_gpu, bool(args.local_rank != -1), args.fp16))
-
-    # Set seed
-    set_seed(args)
-
-    # Model & Tokenizer Setup
-    args, model = setup(args)
+    
+    # Define results dictionary
+    results = {} 
 
     # Training 5-CV
-    best_spec, best_sens, best_acc, best_auc, best_ap, best_f2, tl, pl,cp = train(args, model, cv)
-        
-    return  best_spec, best_sens, best_acc, best_auc, best_ap, best_f2, tl, pl,cp
+    for cv in range(args.num_cv):
+        # Set seed
+        set_seed(args)
 
+        # Model & Tokenizer Setup
+        args, model = setup(args)
 
+        #Train loop
+        best_spec, best_sens, best_acc, best_auc, best_aupr, best_f2, tl, pl,cp = train(args, model,cv)
 
-if __name__ == "__main__":
+        # Confidence metrics
+        csp,cse = calculate_confidence_metrics(tl, pl, cp) 
+        bs = brier_score_loss(tl, cp)
+        bsnc = brier_score_one_class(tl, cp, cl = 0)
+        bspc = brier_score_one_class(tl, cp, cl = 1)
     
-    for cv in range(num_cv):
-        best_spec, best_sens, best_acc, best_auc, best_ap, best_f2, tl, pl,cp = main(cv)
+        metrics_dict = {
+            'Specificity': best_spec,
+            'Sensitivity': best_sens,
+            'Accuracy': best_acc,
+            'AUROC': best_auc,
+            'AUPRC': best_aupr,
+            'F2-score': best_f2,
+            'CSP': csp,
+            'CSE': cse,
+            'BSNC': bsnc,
+            'BSPC': bspc,
+            'BS': bs}
+        
+        for metric, value in metrics_dict.items():
+            results[f"CV {cv+1}"] = {}
+            results[f"CV {cv+1}"][metric] = value
+        
+    return results
 
+
+
+if __name__ == "__main__": main()
 
