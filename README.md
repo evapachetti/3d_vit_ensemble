@@ -21,11 +21,12 @@ The ProstateX-YYYY folder refers to single patient acquisition, while the four s
 
 In the following, we list the hyperparameters combinations that form each of the baseline ViT.
 
-| **** | **d** | **L** | **D** | **k** | **Configuration** |
+| **p** | **d** | **L** | **D** | **k** | **Configuration** |
 |:----:|:-----:|:-----:|:-----:|:-----:|:-----------------:|
 |      |       |       | 64    | 4     | 1                 |
 |      |       | 4     | 32    | 8     | 2                 |
 |      |       |       | 16    | 16    | 3                 |
+                       -------------------------------------     
 |      |       |       | 64    | 4     | 4                 |
 |      | 2048  | 6     | 32    | 8     | 5                 |
 |      |       |       | 16    | 16    | 6                 |
