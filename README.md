@@ -5,7 +5,7 @@ Official code for [**3D-Vision-Transformer Stacking Ensemble for Assessing Prost
 ![vit_ensemble](./img/vit_ensemble.png)
 
 ## Dataset
-We utilized the [Prostate-X 2](https://www.cancerimagingarchive.net/collection/prostatex/) dataset for our experiments. To see pre-processing details, please refer to our paper.
+We utilized the [Prostate-X 2](https://www.cancerimagingarchive.net/collection/prostatex/) dataset for our experiments. To see pre-processing details, please refer to our [paper](https://www.mdpi.com/2306-5354/10/9/1015).
 According to our code, data should be stored according to the following structure:
 ```
 ├── dataset
@@ -15,7 +15,7 @@ According to our code, data should be stored according to the following structur
 │       ├── horizontal_flip
 │       ├── vertical_flip
 ```
-The ProstateX-YYYY folder refers to single patient acquisition, while the four subfolders contain the original and augmented versions.
+The ProstateX-YYYY folder refers to single patient acquisition, while the four subfolders contain the original and augmented versions of the images.
 
 ## Usage
 
