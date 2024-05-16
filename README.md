@@ -26,7 +26,6 @@ In the following, we list the hyperparameters combinations that form each of the
 |      |       |       | 64    | 4     | 1                 |
 |      |       | 4     | 32    | 8     | 2                 |
 |      |       |       | 16    | 16    | 3                 |
-                       -------------------------------------     
 |      |       |       | 64    | 4     | 4                 |
 |      | 2048  | 6     | 32    | 8     | 5                 |
 |      |       |       | 16    | 16    | 6                 |
