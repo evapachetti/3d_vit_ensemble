@@ -17,6 +17,34 @@ According to our code, data should be stored according to the following structur
 ```
 The ProstateX-YYYY folder refers to single patient acquisition, while the four subfolders contain the original and augmented versions of the images.
 
+## ViT baseline configurations
+
+In the following, we list the hyperparameters combinations that form each of the baseline ViT.
+
+|    p    |    d    |    L    |    D    |    k    |    Configuration    |
+|:-------:|:-------:|:-------:|:-------:|:-------:|:-------------------:|
+|                                 64         4               1          |
+|                        4        32         8               2          |
+|                                 16        16               3          |
+-------------------------------------------------------------------------
+|                                                                       |
+|                                                                       |
+|                                                                       |
+|                                                                    
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+
+
 ## Usage
 
 ### 1. Train baseline ViTs on the whole dataset or using CV/bootstrapping techniques
