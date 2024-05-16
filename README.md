@@ -19,22 +19,32 @@ The ProstateX-YYYY folder refers to single patient acquisition, while the four s
 
 ## Usage
 
-### 1. Train baseline ViTs using CV or bootstrapping techniques
+### 1. Train baseline ViTs on the whole dataset or using CV/bootstrapping techniques
 ```
 python train_baseline_cv.py
 ```
 ```
 python train_baseline_bootstrap.py
 ```
+Re-train best baseline ViT on the whole dataset:
+```
+python train_baseline_whole_dataset.py
+```
 
 
-### 2. Train ensemble ViTs using CV or bootstrapping techniques
+### 2. Train ensemble ViT on the whole dataset or using CV/bootstrapping techniques
 ```
 python train_ensemble_cv.py
 ```
 ```
 python train_ensemble_bootstrap.py
 ```
+Re-train best ensemble ViT on the whole dataset:
+```
+python train_ensemble_whole_dataset.py --ensemble_conf_list 5,9,11
+```
+The --ensemble_conf_list parameter defines the combination of baseline ViTs that compose the best-performing ensemble to re-train on the whole dataset.
+
 ### 3. Test baseline and ensemble ViTs trained according to CV
 ```
 python test.py
