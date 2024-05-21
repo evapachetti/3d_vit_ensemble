@@ -13,7 +13,7 @@ from models.modeling import VisionTransformer, TransformerEnsemble
 import numpy as np # type: ignore
 from matplotlib import pyplot as plt # type: ignore
 import os
-from tools import set_seed, normalize, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class, testing_model
+from tools import normalize, parameters_config, get_config, calculate_confidence_metrics, brier_score_one_class, testing_model
 from sklearn.metrics import brier_score_loss # type: ignore
 import pandas as pd # type: ignore
 from create_dataset import ProstateDataset, ToTensorDataset
@@ -31,12 +31,12 @@ def test_baseline(args):
    
     for k in tqdm(range(args.cv)):
         # Load model
-        model_path = os.path.join(args.base_path, f"conf_{args.conf}_cv_{args.cv}.bin")
+        model_path = os.path.join(args.base_path, f"conf{args.conf}", f"cv{k+1}.bin")
         model.load_state_dict(torch.load(model_path))
         model.to(args.device)
         model.eval()
 
-        res_base[f'CV {k}'] = {}
+        res_base[f'CV {k+1}'] = {}
         
         # Dataset loading
         csv_file_train = os.path.join(args.csv_path, f"training_cv{k+1}.csv")
@@ -65,19 +65,19 @@ def test_baseline(args):
         bs_1 = brier_score_one_class(true_labels, class_probabilities, cl=1)
         csp, cse = calculate_confidence_metrics(true_labels, predicted_labels, class_probabilities)
     
-    # Save results
+        # Save results
 
-    res_base[f'CV {k}']['Specificity'] = specificity
-    res_base[f'CV {k}']['Sensitivity'] = sensitivity
-    res_base[f'CV {k}']['Balanced Accuracy'] = b_accuracy
-    res_base[f'CV {k}']['AUROC'] = roc_auc
-    res_base[f'CV {k}']['AUPRC'] = ap_score
-    res_base[f'CV {k}']['F2-score'] = f2_score
-    res_base[f'CV {k}']['Brier score'] = brier_score
-    res_base[f'CV {k}']['BS_0'] = bs_0
-    res_base[f'CV {k}']['BS_1'] = bs_1    
-    res_base[f'CV {k}']['CSP'] = csp    
-    res_base[f'CV {k}']['CSE'] = cse
+        res_base[f'CV {k+1}']['Specificity'] = specificity
+        res_base[f'CV {k+1}']['Sensitivity'] = sensitivity
+        res_base[f'CV {k+1}']['Balanced Accuracy'] = b_accuracy
+        res_base[f'CV {k+1}']['AUROC'] = roc_auc
+        res_base[f'CV {k+1}']['AUPRC'] = ap_score
+        res_base[f'CV {k+1}']['F2-score'] = f2_score
+        res_base[f'CV {k+1}']['Brier score'] = brier_score
+        res_base[f'CV {k+1}']['BS_0'] = bs_0
+        res_base[f'CV {k+1}']['BS_1'] = bs_1    
+        res_base[f'CV {k+1}']['CSP'] = csp    
+        res_base[f'CV {k+1}']['CSE'] = cse
 
     median_res_base = {}
     mean_res_base = {}
@@ -86,8 +86,8 @@ def test_baseline(args):
     percents_25_base = {}
     percents_75_base = {}
 
-    for k in res_base['CV 0'].keys():
-        values = [res_base[f'CV {s}'][k] for s in range(args.cv)]
+    for k in res_base['CV 1'].keys():
+        values = [res_base[f'CV {s+1}'][k] for s in range(args.cv)]
         median_res_base[k] = np.median(values)
         mean_res_base[k] = np.mean(values)
         percents_2_5_base[k] = np.percentile(values, 2.5)
@@ -115,11 +115,14 @@ def test_ensemble(args):
     res_ens, median_res_ens, mean_res_ens, percents_2_5_ens, percents_97_5_ens, percents_25_ens, percents_75_ens = {},{},{},{},{},{},{}
 
     for comb in tqdm(combs): 
+        c_t1, c_t2, c_t3 = comb
+        ensemble_name = f"{c_t1}_{c_t2}_{c_t3}"
+
         for k in tqdm(range(args.cv)):
             
-            ens_model = os.path.join(args.ens_dir,"conf_"+str(args.conf)+"cv_"+str(args.cv)+".bin")
+            ens_model = os.path.join(args.ens_dir,f"ensemble_{ensemble_name}",f"cv{k+1}.bin")
 
-            res_ens['CV '+str(k)] = {}
+            res_ens[f'CV {k+1}'] = {}
             
             csv_file_train = os.path.join(args.csv_path, f"training_cv{k+1}.csv")
 
@@ -134,7 +137,7 @@ def test_ensemble(args):
             c_t1, c_t2, c_t3 = comb
             
             # Load pre-trained transformers and ensemble
-            transformer_paths = [os.path.join(args.base_dir, f"Conf_{c}.bin") for c in [c_t1, c_t2, c_t3]]
+            transformer_paths = [os.path.join(args.base_dir, f"conf{c}", f"conf{c}.bin") for c in [c_t1, c_t2, c_t3]]
             transformers = [VisionTransformer(get_config(*parameters_config(c)), 128, zero_head=True, num_classes=1).load_state_dict(torch.load(path, map_location=args.device)) for path, c in zip(transformer_paths, comb)]
             ensemble = TransformerEnsemble(*transformers).to(args.device)
             ensemble.load_state_dict(torch.load(ens_model, map_location=args.device))    
@@ -154,21 +157,21 @@ def test_ensemble(args):
             bs_1 = brier_score_one_class(true_labels, class_probabilities, cl = 1)
             csp,cse = calculate_confidence_metrics(true_labels, predicted_labels, class_probabilities) 
             
-            res_ens[f'CV {k}']['Specificity'] = specificity
-            res_ens[f'CV {k}']['Sensitivity'] = sensitivity
-            res_ens[f'CV {k}']['Balanced Accuracy'] = b_accuracy
-            res_ens[f'CV {k}']['AUROC'] = roc_auc
-            res_ens[f'CV {k}']['AUPRC'] = ap_score
-            res_ens[f'CV {k}']['F2-score'] = f2_score
-            res_ens[f'CV {k}']['Brier score'] = brier_score
-            res_ens[f'CV {k}']['BS_0'] = bs_0
-            res_ens[f'CV {k}']['BS_1'] = bs_1    
-            res_ens[f'CV {k}']['CSP'] = csp    
-            res_ens[f'CV {k}']['CSE'] = cse
+            res_ens[f'CV {k+1}']['Specificity'] = specificity
+            res_ens[f'CV {k+1}']['Sensitivity'] = sensitivity
+            res_ens[f'CV {k+1}']['Balanced Accuracy'] = b_accuracy
+            res_ens[f'CV {k+1}']['AUROC'] = roc_auc
+            res_ens[f'CV {k+1}']['AUPRC'] = ap_score
+            res_ens[f'CV {k+1}']['F2-score'] = f2_score
+            res_ens[f'CV {k+1}']['Brier score'] = brier_score
+            res_ens[f'CV {k+1}']['BS_0'] = bs_0
+            res_ens[f'CV {k+1}']['BS_1'] = bs_1    
+            res_ens[f'CV {k+1}']['CSP'] = csp    
+            res_ens[f'CV {k+1}']['CSE'] = cse
         
 
-        for k in res_ens['CV 0'].keys():
-            values = [res_ens[f'CV {s}'][k] for s in range(args.cv)]
+        for k in res_ens['CV 1'].keys():
+            values = [res_ens[f'CV {s+1}'][k] for s in range(args.cv)]
             median_res_ens[k] = np.median(values)
             mean_res_ens[k] = np.mean(values)
             percents_2_5_ens[k] = np.percentile(values, 2.5)
@@ -262,9 +265,9 @@ def main():
                         help="Path where csv files are stored.")
     parser.add_argument("--output_path", default=os.path.join(os.getcwd(), "output"),
                         help="Path where store results.")
-    parser.add_argument("--base_path", default=os.path.join(os.getcwd(), "output", "baseline_models"),
+    parser.add_argument("--base_path", default=os.path.join(os.getcwd(), "output", "cv_baseline_models"),
                         help="Path where baseline parameters are stored.")
-    parser.add_argument("--ens_path", default=os.path.join(os.getcwd(), "output", "ensemble_models"),
+    parser.add_argument("--ens_path", default=os.path.join(os.getcwd(), "output", "cv_ensemble_models"),
                         help="Path where ensemble parameters are stored.")
     parser.add_argument("--baseline",  action='store_true',
                         help="Whether compute test on baseline model.")
