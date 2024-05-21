@@ -299,9 +299,11 @@ def main():
         for metric, value in metrics_dict.items():
             results[f"CV {cv+1}"] = {}
             results[f"CV {cv+1}"][metric] = value
-        
-    return results
-
+    
+    for cv in range(args.num_cv):
+        logging.info(f"--- CV FOLD # {cv+1} ---")        
+        for metric, value in results[f"CV {cv+1}"].items():
+            logging.info(f"{metric}: {value}")
 
 
 if __name__ == "__main__": main()

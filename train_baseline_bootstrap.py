@@ -304,7 +304,10 @@ def main():
             results[f"BOOT {boot+1}"] = {}
             results[f"BOOT {boot+1}"][metric] = value
 
-    return results            
+    for boot in range(args.num_rep):
+        logging.info(f"--- BOOTSTRAPPING # {boot+1} ---")        
+        for metric, value in results[f"BOOT {boot+1}"].items():
+            logging.info(f"{metric}: {value}")        
 
 if __name__ == "__main__": main()        
 

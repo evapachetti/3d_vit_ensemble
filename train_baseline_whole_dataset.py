@@ -293,8 +293,10 @@ def main():
                 'Accuracy': best_acc,
                 'AUROC': best_auc,
                 'F2-score': best_f2}
+
+    for metric, value in results.items():
+        logging.info(f"{metric}: {value}")   
     
-    return results
 
 if __name__ == "__main__":
     main()

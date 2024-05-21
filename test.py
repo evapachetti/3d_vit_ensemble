@@ -20,7 +20,7 @@ from create_dataset import ProstateDataset, ToTensorDataset
 from itertools import combinations
 from tqdm import tqdm # type: ignore
 import argparse
-
+import logging
 
 def test_baseline(args):
     
@@ -96,11 +96,11 @@ def test_baseline(args):
         percents_75_base[k] = np.percentile(values, 75)
 
     # Print results
-    print("---Base ViT results (median and 90% CI)---\n")
+    logging.info("---Base ViT results (median and 90% CI)---\n")
     for key, value in median_res_base.items():
         ci_2_5 = percents_2_5_base[key]
         ci_97_5 = percents_97_5_base[key]
-        print(f"{key}: {round(value, 3)} [{round(ci_2_5, 3)}-{round(ci_97_5, 3)}]")
+        logging.info(f"{key}: {round(value, 3)} [{round(ci_2_5, 3)}-{round(ci_97_5, 3)}]")
     
     return res_base
 
@@ -177,11 +177,11 @@ def test_ensemble(args):
             percents_75_ens[k] = np.percentile(values, 75)
 
         # Print results
-        print("---Ensemble ViT results (median and 90% CI)---\n")
+        logging.info("---Ensemble ViT results (median and 90% CI)---\n")
         for key, value in median_res_ens.items():
             ci_2_5 = percents_2_5_ens[key]
             ci_97_5 = percents_97_5_ens[key]
-            print(f"{key}: {round(value, 3)} [{round(ci_2_5, 3)}-{round(ci_97_5, 3)}]")
+            logging.info(f"{key}: {round(value, 3)} [{round(ci_2_5, 3)}-{round(ci_97_5, 3)}]")
         
         return res_ens
             
@@ -244,27 +244,27 @@ def compute_statistics(res_base, res_ens, args):
 def main():
     parser = argparse.ArgumentParser()
     # Required parameters
-    parser.add_argument("--cv", required=True, default = 5,
+    parser.add_argument("--cv", default = 5,
                         help="Number of folds in cross validation.")
-    parser.add_argument("--conf", required=True, default = 5,
+    parser.add_argument("--conf", default = 5,
                         help="Configuration number of baseline model.")
-    parser.add_argument("--max_configs", required=True, default = 19,
+    parser.add_argument("--max_configs", default = 19,
                         help="Max number of baseline configurations consider.")
-    parser.add_argument("--combinations", required=True, default = 3,
+    parser.add_argument("--combinations", default = 3,
                         help="How many baseline combinations in ensemble consider.")
-    parser.add_argument("--image_size",  required=True, default=128,
+    parser.add_argument("--image_size", default=128,
                         help="Image size.")
-    parser.add_argument("--test_batch_size",  required=True, default=1,
+    parser.add_argument("--test_batch_size", default=1,
                         help="Batch size for validation and test loaders.")
-    parser.add_argument("--device",  required=True, default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    parser.add_argument("--device", default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                         help="Device to compute operations.")
-    parser.add_argument("--csv_path",  required=True, default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
+    parser.add_argument("--csv_path", default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
                         help="Path where csv files are stored.")
-    parser.add_argument("--output_path",  required=True, default=os.path.join(os.getcwd(), "output"),
+    parser.add_argument("--output_path", default=os.path.join(os.getcwd(), "output"),
                         help="Path where store results.")
-    parser.add_argument("--base_path",  required=True, default=os.path.join(os.getcwd(), "output", "baseline_models"),
+    parser.add_argument("--base_path", default=os.path.join(os.getcwd(), "output", "baseline_models"),
                         help="Path where baseline parameters are stored.")
-    parser.add_argument("--ens_path",  required=True, default=os.path.join(os.getcwd(), "output", "ensemble_models"),
+    parser.add_argument("--ens_path", default=os.path.join(os.getcwd(), "output", "ensemble_models"),
                         help="Path where ensemble parameters are stored.")
     parser.add_argument("--baseline",  action='store_true',
                         help="Whether compute test on baseline model.")
@@ -280,6 +280,9 @@ def main():
 
     if args.baseline and args.ensemble:
         stat_results = compute_statistics(res_base, res_ens, args)
+    
+    for metric, value in stat_results.items():
+        logging.info(f"{metric}: {value}")   
 
     
     
