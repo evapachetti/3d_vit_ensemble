@@ -79,7 +79,7 @@ The **--ensemble_conf_list** parameter defines the combination of baseline ViTs 
 
 ### 3. Test baseline and ensemble ViTs trained according to CV
 ```
-python test.py
+python test_cv.py
 ```
 
 ## Citation
