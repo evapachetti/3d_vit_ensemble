@@ -82,7 +82,7 @@ The **--ensemble_conf_list** parameter defines the combination of baseline ViTs 
 python test.py
 ```
 
-## Citations
+## Citation
 
 ```bibtex
 @article{pachetti20233d,
