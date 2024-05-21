@@ -56,7 +56,7 @@ Train all the baseline ViTs following a bootstrapping approach:
 ```
 python train_baseline_bootstrap.py
 ```
-Re-train best baseline ViT on the whole dataset:
+Train best baseline ViT on the whole dataset:
 ```
 python train_baseline_whole_dataset.py
 ```
@@ -71,7 +71,7 @@ Train all the ensemble ViTs following a bootstrapping approach:
 ```
 python train_ensemble_bootstrap.py
 ```
-Re-train best ensemble ViT on the whole dataset:
+Train best ensemble ViT on the whole dataset:
 ```
 python train_ensemble_whole_dataset.py --ensemble_conf_list 5,9,11
 ```
@@ -82,7 +82,7 @@ The **--ensemble_conf_list** parameter defines the combination of baseline ViTs 
 python test.py
 ```
 
-## Citations
+## Citation
 
 ```bibtex
 @article{pachetti20233d,
