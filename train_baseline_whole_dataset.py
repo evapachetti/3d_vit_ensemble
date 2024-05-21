@@ -48,9 +48,12 @@ def simple_accuracy(preds, labels):
 
 def save_model(args, model):
     model_to_save = model.module if hasattr(model, 'module') else model
-    model_checkpoint = os.path.join(args.output_dir, "%s_Best_model_Conf_5.bin" % args.name)
+    save_conf_dir = os.path.join(args.output_dir, "baseline_models", f"conf{args.config}")
+    os.makedirs(save_conf_dir, exist_ok=True)
+    model_checkpoint = os.path.join(save_conf_dir, f"conf{args.config}.bin")
     torch.save(model_to_save.state_dict(), model_checkpoint)
-    logger.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
+    logger.info("Saved model checkpoint to [DIR: %s]", save_conf_dir)
+
 
 def save_best_metrics(args,model,specificity,sensitivity,accuracy,roc_auc,f2_score):
             best_spec = specificity

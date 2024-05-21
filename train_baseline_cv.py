@@ -127,11 +127,11 @@ def train(args, model,cv):
     
     def save_model(args, model,cv):
         model_to_save = model.module if hasattr(model, 'module') else model
-        save_conf_dir = os.path.join(args.output_dir, "baseline_models", f"conf{args.config}")
+        save_conf_dir = os.path.join(args.output_dir, "cv_baseline_models", f"conf{args.config}")
         os.makedirs(save_conf_dir, exist_ok=True)
         model_checkpoint = os.path.join(save_conf_dir, f"cv{cv+1}.bin")
         torch.save(model_to_save.state_dict(), model_checkpoint)
-        logging.info("Saved model checkpoint to [DIR: %s]", args.output_dir)
+        logging.info("Saved model checkpoint to [DIR: %s]", save_conf_dir)
     
     def save_best_metrics(args,model,specificity,sensitivity,b_accuracy,roc_auc,f2_score,ap_score,true_labels, predicted_labels, class_probabilities):
                 best_spec = specificity

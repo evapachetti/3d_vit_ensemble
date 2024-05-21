@@ -57,7 +57,7 @@ def train_ensemble_cv(args):
     combs = list(combinations(configurations, args.combinations))
 
     # Define paths
-    net_path = os.path.join(args.output_path, "baseline_models")  # directory where trained baseline models are stored
+    base_path = os.path.join(args.output_path, "baseline_models")  # directory where trained baseline models are stored
 
     # Define criterion
     criterion = nn.BCELoss()
@@ -65,25 +65,26 @@ def train_ensemble_cv(args):
     # Trainin loop
     for comb in tqdm(combs): 
 
-        logger.info("Ensemble combination #" + str(comb))
-
-        results = {} #results of each combination in k-fold CV
         c_t1, c_t2, c_t3 = comb
         ensemble_name = f"{c_t1}_{c_t2}_{c_t3}"
-    
+
+        logger.info(f"Ensemble combination: {ensemble_name}")
+
+        results = {} #results of each combination in k-fold CV
+        
         worksheet.write(row,column,ensemble_name)   
         column = 1
         worksheet.write(row,column,'Validation') 
         
         # Load pre-trained transformers
-        transformer_paths = [os.path.join(net_path, f"Conf_{c}.bin") for c in [c_t1, c_t2, c_t3]]
+        transformer_paths = [os.path.join(base_path, f"conf{c}.bin") for c in [c_t1, c_t2, c_t3]]
         transformers = [VisionTransformer(get_config(*parameters_config(c)), 128, zero_head=True, num_classes=1).load_state_dict(torch.load(path, map_location=args.device)) for path, c in zip(transformer_paths, comb)]
         ensemble = TransformerEnsemble(*transformers).to(args.device)
         optimizer = optim.Adam(ensemble.parameters(), lr=1e-4)
         
         for k in tqdm(range(args.num_cv)): # k-fold CV
         
-            logger.info("Cross-validation fold #" + str(k+1))
+            logger.info(f"Cross-validation fold {k+1}")
             save_path = os.path.join(args.output_path,"cv_ensemble_models",f"ensemble_{ensemble_name}")
             os.makedirs(save_path, exist_ok=True)
             save_path = os.path.join(save_path,f"cv{k+1}.bin")
@@ -123,7 +124,7 @@ def train_ensemble_cv(args):
             
             dset_loaders = {'train': train_loader, 'val': valid_loader}
             
-            val_loss_array, train_loss_array, val_accuracy_array, train_accuracy_array, aucs = [], [], [], [], []
+            val_loss_array, train_loss_array, val_accuracy_array, train_accuracy_array = [], [], [], []
             best_spec, best_sens, best_bacc, best_auc, best_aupr, best_f2 = 0,0,0,0,0,0    
 
             
@@ -167,11 +168,9 @@ def train_ensemble_cv(args):
                     if phase == 'train':
                         train_loss_array.append(phase_loss)
                         train_accuracy_array.append(phase_acc)
-                        train_loss = phase_loss
                     else:
                         val_loss_array.append(phase_loss)
                         val_accuracy_array.append(phase_acc)
-                        valid_loss = phase_loss
                         
                         true_labels = [i.item() for i in true_labels]
                         class_probabilities = [i.item() for i in class_probabilities]
@@ -233,27 +232,27 @@ def train_ensemble_cv(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_epochs", required=True, default=100,
+    parser.add_argument("--num_epochs", default=100,
                         help="Number of folds in cross validation.")
-    parser.add_argument("--num_cv", required=True, default = 5,
+    parser.add_argument("--num_cv", default = 5,
                         help="Number of folds in cross validation.")
-    parser.add_argument("--conf", required=True, default = 5,
+    parser.add_argument("--conf", default = 5,
                         help="Configuration number of baseline model.")
-    parser.add_argument("--max_configs", required=True, default = 19,
+    parser.add_argument("--max_configs", default = 19,
                         help="Max number of baseline configurations consider.")
-    parser.add_argument("--combinations", required=True, default = 3,
+    parser.add_argument("--combinations", default = 3,
                         help="How many baseline combinations in ensemble consider.")
-    parser.add_argument("--image_size",  required=True, default=128,
+    parser.add_argument("--image_size", default=128,
                         help="Image size.")
-    parser.add_argument("--train_batch_size",  required=True, default=4,
+    parser.add_argument("--train_batch_size", default=4,
                         help="Batch size for validation and test loaders.")
-    parser.add_argument("--eval_batch_size",  required=True, default=1,
+    parser.add_argument("--eval_batch_size", default=1,
                         help="Batch size for validation and test loaders.")
-    parser.add_argument("--device",  required=True, default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    parser.add_argument("--device", default=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                         help="Device to compute operations.")
-    parser.add_argument("--csv_path",  required=True, default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
+    parser.add_argument("--csv_path", default=os.path.join(os.getcwd(), "csv_files", "cross_validation"),
                         help="Path where csv files are stored.")
-    parser.add_argument("--output_path",  required=True, default=os.path.join(os.getcwd(), "output"),
+    parser.add_argument("--output_path", default=os.path.join(os.getcwd(), "output"),
                         help="Path where store results.")
     args = parser.parse_args()
 
