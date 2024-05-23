@@ -6,7 +6,7 @@ Official code for [**3D-Vision-Transformer Stacking Ensemble for Assessing Prost
 
 ## Dataset
 We utilized the [Prostate-X 2](https://www.cancerimagingarchive.net/collection/prostatex/) dataset for our experiments. To see pre-processing details, please refer to our [paper](https://www.mdpi.com/2306-5354/10/9/1015).
-According to our code, data should be stored according to the following structure:
+Based on our code, the data should be organized according to the following structure:
 ```
 ├── dataset
 │   └── ProstateX-YYYY
